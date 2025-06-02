@@ -1,0 +1,216 @@
+import requests
+import csv
+import argparse
+import os
+
+def main(page=1, year_range="2020-2025", filename = 'films00_25.csv'):
+    base_url = "https://api.kinopoisk.dev/v1.4/movie"
+    API_TOKEN = "7Y03YMN-FYEM4QH-JSXSNKX-FX1670M"
+    headers = {"X-API-KEY": API_TOKEN}
+    filename = filename
+
+    params = {
+        "page": page,
+        "limit": 250,
+        "selectFields": ["id", "name", "type", "status", "year", "releaseYears", 
+                        "rating", "ratingMpaa", "ageRating", "votes", "budget", 
+                        "audience", "movieLength", "genres", "countries", 
+                        "ticketsOnSale", "persons", "sequelsAndPrequels", "fees", "premiere"],
+        "type": ["movie", "cartoon"],
+        "countries.name": "Россия",
+        "year": year_range
+    }
+
+    response = requests.get(base_url, headers=headers, params=params)
+    if response.status_code != 200:
+        print(f"Ошибка: {response.status_code}")
+        print(response.text)
+        return
+
+    data = response.json()
+    print(f"Обрабатывается страница {page}, найдено фильмов: {len(data['docs'])}")
+    
+
+    def process_movie(movie):
+        # Обработка None значений для списков
+        genres = movie.get('genres') or []
+        countries = movie.get('countries') or []
+        persons = movie.get('persons') or []
+        release_years = movie.get('releaseYears') or []
+        sequelsAndPrequels = movie.get('sequelsAndPrequels') or []
+        
+        # Форматирование данных
+        genres_str = ", ".join(g['name'] for g in genres) if genres else ""
+        countries_str = ", ".join(c['name'] for c in countries) if countries else ""
+        release_years_parts = []
+        for ry in release_years:
+            start = ry.get('start')
+            if start is not None:
+                release_years_parts.append(str(start))
+        release_years_str = ", ".join(release_years_parts)
+        
+        # Обработка сиквелов и приквелов
+        sequelsAndPrequels_count = len(sequelsAndPrequels)
+
+        # Обработка персон
+        actor_list = []
+        designer_list = []
+        writer_list = []
+        producer_list = []
+        operator_list = []
+        director_list = []
+        composer_list = []
+        editor_list = []
+        others_list = []
+
+        for person in persons:
+            enProfession = person.get('enProfession', '') or ''
+            enProfession = enProfession.lower() if isinstance(enProfession, str) else ''
+            
+            name = person.get('name') or ''
+            if isinstance(name, str):
+                name = name.strip()
+            else:
+                name = str(name).strip() if name is not None else ''
+            
+            if not name:
+                continue
+                
+            if enProfession == 'actor':
+                actor_list.append(name)
+            elif enProfession == 'designer':
+                designer_list.append(name)
+            elif enProfession == 'writer':
+                writer_list.append(name)
+            elif enProfession == 'producer':
+                producer_list.append(name)
+            elif enProfession == 'operator':
+                operator_list.append(name)
+            elif enProfession == 'director':
+                director_list.append(name)
+            elif enProfession == 'composer':
+                composer_list.append(name)
+            elif enProfession == 'editor':
+                editor_list.append(name)
+            else:
+                others_list.append(name)    
+        
+        actor_str = ", ".join(actor_list)
+        designer_str = ", ".join(designer_list)
+        writer_str = ", ".join(writer_list)
+        producer_str = ", ".join(producer_list)
+        operator_str = ", ".join(operator_list)
+        director_str = ", ".join(director_list)
+        composer_str = ", ".join(composer_list)
+        editor_str = ", ".join(editor_list)
+        others_str = ", ".join(others_list)
+        
+        # Обработка премьеры
+        premiere = movie.get('premiere') or {}
+        premiere_russia = premiere.get('russia', '')
+        if isinstance(premiere_russia, str) and premiere_russia:
+            premiere_russia = premiere_russia.split('T')[0]
+        else:
+            premiere_russia = ''
+        
+        # Обработка рейтингов
+        rating = movie.get('rating') or {}
+        rating_kp = rating.get('kp')
+        
+        # Обработка голосов
+        votes = movie.get('votes') or {}
+        votes_kp = votes.get('kp')
+        
+        # Обработка бюджета
+        budget = movie.get('budget') or {}
+        budget_value = budget.get('value')
+        budget_currency = budget.get('currency')
+        budget_str = f"{budget_value} {budget_currency}" if budget_value or budget_currency else None
+        
+
+        # Обработка сборов
+        fees = movie.get('fees', {})
+
+        fees_world = fees.get('world', {})
+        fees_world_value = fees_world.get('value')
+        fees_world_currency = fees_world.get('currency')
+        fees_world_str = f"{fees_world_value} {fees_world_currency}" if fees_world_value or fees_world_currency else None
+
+        fees_russia = fees.get('russia', {})
+        fees_russia_value = fees_russia.get('value')
+        fees_russia_currency = fees_russia.get('currency')
+        fees_russia_str = f"{fees_russia_value} {fees_russia_currency}" if fees_russia_value or fees_russia_currency else None
+
+        fees_usa = fees.get('usa', {})
+        fees_usa_value = fees_usa.get('value')
+        fees_usa_currency = fees_usa.get('currency')
+        fees_usa_str = f"{fees_usa_value} {fees_usa_currency}" if fees_russia_value or fees_russia_currency else None
+        
+        # Обработка аудитории
+        audience = movie.get('audience', [])
+        audience_count = audience[0].get('count') if audience else None
+        
+        return {
+            'id': movie.get('id'),
+            'name': movie.get('name'),
+            'type': movie.get('type'),
+            'status': movie.get('status'),
+            'year': movie.get('year'),
+            'release_years': release_years_str,
+            'movieLength': movie.get('movieLength'),
+            'rating_kp': rating_kp,
+            'ratingMpaa': movie.get('ratingMpaa'),
+            'ageRating': movie.get('ageRating'),
+            'votes_kp': votes_kp,
+            'budget': budget_str,
+            'audience_count': audience_count,
+            'fees_russia': fees_russia_str,
+            'fees_world': fees_world_str,
+            'fees_usa': fees_usa_str,
+            'genres': genres_str,
+            'countries': countries_str,
+            'ticketsOnSale': movie.get('ticketsOnSale'),
+            'premiere_russia': premiere_russia,
+            'sequelsAndPrequels': sequelsAndPrequels_count,
+            'actor': actor_str,
+            'designer': designer_str,
+            'writer': writer_str,
+            'producer': producer_str,
+            'operator': operator_str,
+            'director': director_str,
+            'composer': composer_str,
+            'editor': editor_str,
+            'others': others_str
+        }
+
+    file_exists = os.path.isfile(filename)
+    write_header = not file_exists or os.path.getsize(filename) == 0
+
+    with open(filename, 'a', newline='', encoding='utf-8-sig') as csvfile:
+        fieldnames = [
+            'id', 'name', 'type', 'status', 'year', 'release_years',
+            'movieLength', 'rating_kp', 'ratingMpaa', 'ageRating', 
+            'votes_kp', 'budget', 'audience_count', 'fees_russia', 'fees_world',
+            'sequelsAndPrequels',
+            'fees_usa', 'genres', 'countries', 'ticketsOnSale', 'premiere_russia',
+            'actor', 'designer', 'writer', 'producer', 'operator', 'director', 'composer',
+            'editor', 'others'
+        ]
+        
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        if write_header:
+            writer.writeheader()
+        
+        for movie in data['docs']:
+            try:
+                writer.writerow(process_movie(movie))
+            except Exception as e:
+                print(f"Ошибка обработки фильма {movie.get('id')}: {str(e)}")
+    
+    print(f"Данные страницы {page} добавлены в файл {filename}")
+
+
+for page in range(1,120):
+    main(page=page, year_range="2000-2025", filename = 'films00_25.csv')
+
